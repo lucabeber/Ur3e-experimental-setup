@@ -1,0 +1,13 @@
+# Eclipse
+.autotools
+.project
+.cproject
+.settings
+
+.vscode/
+
+packages/
+
+**/debian/
+**/obj-x86_64-linux-gnu/
+**/rosdep.yaml

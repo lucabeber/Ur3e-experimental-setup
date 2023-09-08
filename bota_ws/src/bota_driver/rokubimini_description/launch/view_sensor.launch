@@ -1,0 +1,19 @@
+<launch>
+  <arg name="sensor" default="BFT_ROKA_ECAT_M8_robot" />
+  <param
+    name="robot_description"
+    command="$(find xacro)/xacro $(find rokubimini_description)/urdf/$(arg sensor).urdf.xacro" />
+  <node
+    name="joint_state_publisher"
+    pkg="joint_state_publisher"
+    type="joint_state_publisher" />
+  <node
+    name="robot_state_publisher"
+    pkg="robot_state_publisher"
+    type="robot_state_publisher" />
+  <node
+    name="rviz"
+    pkg="rviz"
+    type="rviz"
+    args="-d $(find rokubimini_description)/config/view_sensor.rviz" />
+</launch>

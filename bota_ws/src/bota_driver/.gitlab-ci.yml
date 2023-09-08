@@ -1,0 +1,105 @@
+ stages:
+   - format-check
+   - build-test-lint
+   - hardware-test-startup
+   - hardware-test-func
+   - cleanup
+
+ variables:
+   DOCKER_HOST: tcp://docker:2375
+   DOCKER_TLS_CERTDIR: ""
+   ROS_DISTRO: "galactic"
+   DOCKER_TEST_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+
+ clang_format_check:
+   stage: format-check
+   image: docker:git
+   services:
+     - name: docker:dind
+       command: ["--registry-mirror", "https://mirror.gcr.io"] # Specify the registry mirror here
+   variables:
+     CLANG_FORMAT_CHECK: "file"
+     CLANG_FORMAT_VERSION: "8"
+   before_script:
+     - echo $DOCKER_HOST && docker info && apk add --update bash coreutils tar py-pip
+     - git clone --quiet --depth 1 https://github.com/ros-industrial/industrial_ci .industrial_ci -b master
+   script:
+     - >
+         .industrial_ci/gitlab.sh ROS_DISTRO=$ROS_DISTRO
+         CLANG_FORMAT_CHECK=$CLANG_FORMAT_CHECK
+         CLANG_FORMAT_VERSION=$CLANG_FORMAT_VERSION
+
+ build_run_tests_check_lint:
+   stage: build-test-lint
+   image: docker:git
+   services:
+     - name: docker:dind
+       command: ["--registry-mirror", "https://mirror.gcr.io"] # Specify the registry mirror here
+   variables:
+     PRERELEASE: "false"
+     CLANG_TIDY: "true"
+     CATKIN_LINT: "true"
+
+   before_script:
+     - apk add --update bash coreutils tar py-pip
+     - git clone --quiet --depth 1 https://github.com/ros-industrial/industrial_ci .industrial_ci -b master
+     - git clone --quiet --depth 1 https://gitlab.com/botasys/soem.git -b foxy-devel
+     - git clone --quiet --depth 1 https://github.com/ros/xacro.git -b ros2
+   script:
+     - >
+         .industrial_ci/gitlab.sh ROS_DISTRO=$ROS_DISTRO
+         CLANG_TIDY=$CLANG_TIDY
+         PRERELEASE=$PRERELEASE
+         CATKIN_LINT=$CATKIN_LINT
+         DOCKER_COMMIT="$DOCKER_TEST_IMAGE"
+     - echo $CI_JOB_TOKEN | docker login -u gitlab-ci-token --password-stdin $CI_REGISTRY
+     - docker push $DOCKER_TEST_IMAGE
+
+ hardware_test_startup:
+   stage: hardware-test-startup
+   tags:
+     - hwtests
+   image: ros:$ROS_DISTRO-ros-base
+   before_script:
+     - apt update && apt install -y git build-essential python3-colcon-common-extensions dh-make
+     - git clone --quiet --depth 1 https://gitlab.com/botasys/soem.git -b foxy-devel
+     - git clone --quiet --depth 1 https://github.com/ros/xacro.git -b ros2
+     - mkdir -p /root/ros2_ws/src && cp -r . /root/ros2_ws/src/bota_driver/
+   script:
+     - . /opt/ros/$ROS_DISTRO/setup.bash && cd /root/ros2_ws/ && rosdep install --from-path src --ignore-src -y && apt-get clean && colcon build --packages-up-to bota_driver
+     - cd /root/ros2_ws/src/bota_driver && tests/hardware_test_startup.sh
+
+ hardware_test_func:
+   stage: hardware-test-func
+   tags:
+     - hwtests
+   image: ros:$ROS_DISTRO-ros-base
+   before_script:
+     - apt update && apt install -y git build-essential python3-colcon-common-extensions dh-make
+     - git clone --quiet --depth 1 https://gitlab.com/botasys/soem.git -b foxy-devel
+     - git clone --quiet --depth 1 https://github.com/ros/xacro.git -b ros2
+     - mkdir -p /root/ros2_ws/src && cp -r . /root/ros2_ws/src/bota_driver/
+   script:
+     - . /opt/ros/$ROS_DISTRO/setup.bash && cd /root/ros2_ws/ && rosdep install --from-path src --ignore-src -y && apt-get clean && colcon build --packages-up-to bota_driver
+     - cd /root/ros2_ws/src/bota_driver && tests/hardware_test_func.sh
+
+ delete_test_image:
+   # taken from https://docs.gitlab.com/ee/user/packages/container_registry/#delete-images-using-gitlab-cicd
+   except:
+     - master
+     - /^(noetic|melodic|lunar|kinetic|jade)-.*devel$/
+   image: docker:latest
+   stage: cleanup
+   services:
+     - name: docker:dind
+       command: ["--registry-mirror", "https://mirror.gcr.io"] # Specify the registry mirror here
+   variables:
+     REG_SHA256: ade837fc5224acd8c34732bf54a94f579b47851cc6a7fd5899a98386b782e228
+     REG_VERSION: 0.16.1
+   before_script:
+     - apk add --no-cache curl
+     - curl --fail --show-error --location "https://github.com/genuinetools/reg/releases/download/v$REG_VERSION/reg-linux-amd64" --output /usr/local/bin/reg
+     - echo "$REG_SHA256  /usr/local/bin/reg" | sha256sum -c -
+     - chmod a+x /usr/local/bin/reg
+   script:
+     - /usr/local/bin/reg rm -d --auth-url $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $DOCKER_TEST_IMAGE

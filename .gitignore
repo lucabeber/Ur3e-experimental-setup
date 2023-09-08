@@ -1,0 +1,12 @@
+bota_ws/install
+bota_ws/log
+bota_ws/build
+controller_ws/install
+controller_ws/log
+controller_ws/build
+ur_ws/install
+ur_ws/log
+ur_ws/build
+Universal_Robot_ROS2_CoppeliaSim/install
+Universal_Robot_ROS2_CoppeliaSim/log
+Universal_Robot_ROS2_CoppeliaSim/build
