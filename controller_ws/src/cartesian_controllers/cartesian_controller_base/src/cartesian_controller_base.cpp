@@ -272,10 +272,6 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Cartes
 
   m_configured = true;
 
-    // Initialize joint number
-  m_joint_number = m_joint_names.size();
-  m_jacobian.resize(m_joint_number);
-
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
