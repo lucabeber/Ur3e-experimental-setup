@@ -189,6 +189,8 @@ class CartesianControllerBase : public controller_interface::ControllerInterface
 
     std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface> >
       m_joint_state_pos_handles;
+    std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface> >
+      m_joint_state_vel_handles;
 
   private:
 

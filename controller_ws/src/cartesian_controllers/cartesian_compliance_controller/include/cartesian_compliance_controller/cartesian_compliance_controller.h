@@ -1,42 +1,3 @@
-////////////////////////////////////////////////////////////////////////////////
-// Copyright 2019 FZI Research Center for Information Technology
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// 1. Redistributions of source code must retain the above copyright notice,
-// this list of conditions and the following disclaimer.
-//
-// 2. Redistributions in binary form must reproduce the above copyright notice,
-// this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.
-//
-// 3. Neither the name of the copyright holder nor the names of its
-// contributors may be used to endorse or promote products derived from this
-// software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
-////////////////////////////////////////////////////////////////////////////////
-
-//-----------------------------------------------------------------------------
-/*!\file    cartesian_compliance_controller.h
- *
- * \author  Stefan Scherzinger <scherzin@fzi.de>
- * \date    2017/07/27
- *
- */
-//-----------------------------------------------------------------------------
-
 #ifndef CARTESIAN_COMPLIANCE_CONTROLLER_H_INCLUDED
 #define CARTESIAN_COMPLIANCE_CONTROLLER_H_INCLUDED
 
@@ -45,30 +6,13 @@
 #include <cartesian_force_controller/cartesian_force_controller.h>
 #include <cartesian_motion_controller/cartesian_motion_controller.h>
 #include <controller_interface/controller_interface.hpp>
+#include <cartesian_compliance_controller/qpOASES.hpp>
+#include "std_msgs/msg/float64_multi_array.hpp"
 
+USING_NAMESPACE_QPOASES
 namespace cartesian_compliance_controller
 {
 
-/**
- * @brief A ROS2-control controller for Cartesian compliance control
- *
- * This controller is the combination of the \ref CartesianMotionController and
- * the \ref CartesianForceController.  Users can use this controller to track
- * Cartesian end effector motion that involves contact with the environment.
- * During operation, both interfaces can be used to command target poses
- * and target wrenches in parallel.
- * While the PD gains determine the controllers responsiveness, users can
- * additionally set a 6-dimensional stiffness for this controller, relating
- * the target pose offset to reaction forces with the environment.
- *
- * Note that the target wrench is superimposed with this stiffness, meaning that
- * the target wrench is fully compensated at some point by the virtual stiffness.
- * A common application is the tracking of a moving target in close proximity
- * to a surface, and applying an additional force profile to that surface.
- * To compensate for bigger offsets, users can set a low stiffness for the axes
- * where the additional forces are applied.
- *
- */
 class CartesianComplianceController
 : public cartesian_motion_controller::CartesianMotionController
 , public cartesian_force_controller::CartesianForceController
@@ -107,10 +51,55 @@ class CartesianComplianceController
      *
      * @return The remaining error wrench, given in robot base frame
      */
+    ctrl::Vector6D        computeStiffness();
     ctrl::Vector6D        computeComplianceError();
 
     ctrl::Matrix6D        m_stiffness;
     std::string           m_compliance_ref_link;
+
+    const ctrl::Vector3D  Q = {3200,3200,3200};
+    const ctrl::Vector3D  R = {0.00001, 0.00001, 0.00001};
+    ctrl::Vector3D        kd = {0,0,0};
+    ctrl::Vector6D        stiffness = {0,0,0,0,0,0};
+    ctrl::Vector3D        kd_max = {1000, 1000, 1000};
+    ctrl::Vector3D        kd_min = {50, 50, 50};
+    ctrl::Vector3D  F_max = {30, 30, 30};
+    ctrl::Vector3D  F_min = {-30, -30, -30};
+    size_t                m_window_length;
+
+    std::vector<ctrl::Vector3D>   m_external_forces;
+    std::vector<ctrl::Vector3D>   m_desired_forces;
+    std::vector<ctrl::Matrix3D>   m_desired_stiffness;
+    
+    // Tank
+    double Xt;
+    double dXt;
+    double kl_ = 100;
+    double dl_ = 20;
+    double tank_energy, old_tank_energy;
+    double tank_energy_threshold;
+    double d_pass_const_stiff, d_pass_damp, d_pass_en;
+    double d_pass_damp_int, en_var_stiff_int;
+    double energy_var_stiff;
+    rclcpp::Time old_time,current_time,start_time;
+
+
+    QProblem min_problem;
+    int print_index = 0;
+
+    // ft sensor subscriber
+    rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr m_ft_sensor_wrench_subscriber;
+    void ftSensorWrenchCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr wrench);
+    ctrl::Vector3D m_ft_sensor_wrench;
+
+    // data publisher
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr  m_data_publisher;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  m_target_pose_publisher;
+    void publishTargetFrame();
+    int step_seconds = 20;
+    double z_step = 0.05;
+    ctrl::Vector3D m_starting_pose;
+
 
 };
 

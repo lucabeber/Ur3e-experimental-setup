@@ -13,6 +13,7 @@ find_package(cartesian_controller_base REQUIRED)
 find_package(cartesian_motion_controller REQUIRED)
 find_package(cartesian_force_controller REQUIRED)
 
+
 # Convenience variable for dependencies
 set(THIS_PACKAGE_INCLUDE_DEPENDS
         rclcpp
@@ -86,5 +87,18 @@ ament_export_include_directories(
 ament_export_libraries(
   ${PROJECT_NAME}
 )
+
+# Set the path to the qpOASES library and headers
+set(QPOASES_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
+set(QPOASES_INCLUDE_DIR ${QPOASES_LIB_DIR}/include/cartesian_adaptive_impedance_controller)
+
+# Add the qpOASES library to the project
+add_library(qpOASES STATIC IMPORTED)
+set_target_properties(qpOASES PROPERTIES IMPORTED_LOCATION ${QPOASES_LIB_DIR}/libqpOASES.so)
+
+# Add the qpOASES include directory to the project
+include_directories(${QPOASES_INCLUDE_DIR})
+
+target_link_libraries(${PROJECT_NAME} qpOASES)
 
 ament_package()
