@@ -58,13 +58,14 @@ class CartesianComplianceController
     std::string           m_compliance_ref_link;
 
     const ctrl::Vector3D  Q = {3200,3200,3200};
-    const ctrl::Vector3D  R = {0.00001, 0.00001, 0.00001};
+    const ctrl::Vector3D  R = {10, 10, 10};
     ctrl::Vector3D        kd = {0,0,0};
     ctrl::Vector6D        stiffness = {0,0,0,0,0,0};
     ctrl::Vector3D        kd_max = {1000, 1000, 1000};
     ctrl::Vector3D        kd_min = {50, 50, 50};
-    ctrl::Vector3D  F_max = {30, 30, 30};
-    ctrl::Vector3D  F_min = {-30, -30, -30};
+    ctrl::Vector3D        F_max = {30, 30, 30};
+    ctrl::Vector3D        F_min = {-30, -30, -30};
+    ctrl::Vector3D        x_d_old = {0,0,0};
     size_t                m_window_length;
 
     std::vector<ctrl::Vector3D>   m_external_forces;

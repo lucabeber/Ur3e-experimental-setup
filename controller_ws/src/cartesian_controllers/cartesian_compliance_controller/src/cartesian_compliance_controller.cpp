@@ -75,7 +75,7 @@ namespace cartesian_compliance_controller
 
     // Make sure sensor wrenches are interpreted correctly
     ForceBase::setFtSensorReferenceFrame(m_compliance_ref_link);
-
+    
     return TYPE::SUCCESS;
   }
 
@@ -110,15 +110,17 @@ namespace cartesian_compliance_controller
     Xt = 1.0;
     dXt = 0.0;
     tank_energy = old_tank_energy = 0.5 * Xt * Xt;
-    tank_energy_threshold = 0.4;
+    tank_energy_threshold = 0.1;
 
     USING_NAMESPACE_QPOASES
     Options options;
     options.printLevel = PL_LOW;
     // redeclare solver with options
-    min_problem = QProblem(3, 3);
+    min_problem = QProblem(3, 4);
 
     m_ft_sensor_wrench = ctrl::Vector3D::Zero();
+
+    x_d_old << m_starting_pose(0), m_starting_pose(1), m_starting_pose(2);
     return TYPE::SUCCESS;
   }
 
@@ -170,6 +172,7 @@ namespace cartesian_compliance_controller
     // Write final commands to the hardware interface
     Base::writeJointControlCmds();
     old_time = current_time;
+    x_d_old << MotionBase::m_target_frame.p.x(), MotionBase::m_target_frame.p.y(), MotionBase::m_target_frame.p.z();
     return controller_interface::return_type::OK;
   }
 
@@ -230,8 +233,10 @@ namespace cartesian_compliance_controller
   }
   ctrl::Vector6D CartesianComplianceController::computeStiffness()
   {
-
     USING_NAMESPACE_QPOASES
+    
+    rclcpp::Duration deltaT_ros = current_time - old_time;
+    double deltaT = deltaT_ros.nanoseconds() * 1e-9;
     // retrieve target position
     ctrl::Vector3D x;
     x(0) = MotionBase::m_current_frame.p.x();
@@ -268,7 +273,7 @@ namespace cartesian_compliance_controller
       l(2) = x(2);
       kl = {kl_, kl_, kl_};
       dl = {dl_, dl_, dl_};
-      F_ref(2) =-15.0;
+      F_ref(2) = - 15.0;
     }
     else
     {
@@ -280,8 +285,10 @@ namespace cartesian_compliance_controller
     }
     // Update energy
     // compute w_transpose * x_tilde_dot -> EQUATION 14-15
-    Eigen::Matrix<double, 3, 1> xdot_mat;
-    xdot_mat << xdot(0), xdot(1), xdot(2);
+    ctrl::Vector3D velocity_error;
+    velocity_error << (x_d(0)-x_d_old(0))/deltaT - xdot(0), 
+                      (x_d(1)-x_d_old(1))/deltaT - xdot(1), 
+                      (x_d(2)-x_d_old(2))/deltaT - xdot(2);
 
 
     real_t H[3 * 3] =
@@ -294,12 +301,13 @@ namespace cartesian_compliance_controller
 
     // -Kmin1 R1 - Fdx Q1 x1 + kd1 (R1 + Q1 x1^2)
     real_t g[3] = {
-      // -kd_min(0) *  R(0) - kd(0) * (x_d(0) - x(0)) * Q(0) * x(0) + kd(0) (R(0) + Q(0) * x(0)^2)
-      (R(0) + Q(0) * pow(x_d(0) - x(0), 2)),
-      (R(1) + Q(1) * pow(x_d(1) - x(1), 2)),
-      (R(2) + Q(2) * pow(x_d(2) - x(2), 2))
-      
+      -kd_min(0) *  R(0) - F_ref(0) * (x_d(0) - x(0)) * Q(0), // + kd(0) * (R(0) + Q(0) * pow(x_d(0) - x(0),2)),  
+      -kd_min(1) *  R(1) - F_ref(1) * (x_d(1) - x(1)) * Q(1), // + kd(1) * (R(1) + Q(1) * pow(x_d(1) - x(1),2)),
+      -kd_min(2) *  R(2) - F_ref(2) * (x_d(2) - x(2)) * Q(2) // + kd(2) * (R(2) + Q(2) * pow(x_d(2) - x(2),2))
     };
+      // (R(0) + Q(0) * pow(x_d(0) - x(0), 2)),
+      // (R(1) + Q(1) * pow(x_d(1) - x(1), 2)),
+      // (R(2) + Q(2) * pow(x_d(2) - x(2), 2))
 
     // Constraints on  K2
     real_t lb[3] = {kd_min(0), kd_min(1), kd_min(2)};
@@ -319,61 +327,75 @@ namespace cartesian_compliance_controller
     // should be  = - Xt^2/2 + kd_x_min*x_tilde_x*x_tilde_dot_x + kd_y_min*x_tilde_y*x_tilde_dot_y + kd_z_min*x_tilde_z*x_tilde_dot_z + epsilon
 
     // Xt^2/2 is for the first step -> then became the old tank value
-    real_t T_constr_min = -old_tank_energy + kd_min(0) * x(0) * xdot(0) + kd_min(1) * x(1) * xdot(1) + kd_min(2) * x(2) * xdot(2) + tank_energy_threshold;
 
+    real_t T_constr_min; 
 
-    real_t A[3 * 3] = {
+    if (old_tank_energy < tank_energy_threshold)
+    {
+      // empty tank
+      stiffness << kd_min(0), kd_min(1), kd_min(2), 50.0,50.0,50.0;
+      energy_var_stiff = (x_d-x).transpose() * (kd - kd_min).asDiagonal() * velocity_error;
+      tank_energy = tank_energy_threshold; // + (energy_var_stiff)*deltaT;
+      return stiffness;
+    }
+    else
+    {
+      T_constr_min = kd_min(0) * x(0) * velocity_error(0) + kd_min(1) * x(1) * velocity_error(1) + kd_min(2) * x(2) * velocity_error(2) + (tank_energy_threshold-old_tank_energy)/deltaT;
+    }
+    
+    real_t A[4 * 3] = {
       x_d(0) - x(0), 0, 0,
       0, x_d(1) - x(1), 0,
-      0, 0, x_d(2) - x(2)
-      // x(0) * xdot(0), x(1) * xdot(1), x(2) * xdot(2) 
+      0, 0, x_d(2) - x(2),
+      (x_d(0) - x(0)) * velocity_error(0), (x_d(1) - x(1)) * velocity_error(1), (x_d(2) - x(2)) * velocity_error(2)
     };    
+    
+    real_t ubA[4] = {F_max(0), F_max(1), F_max(2), 9999999999999};
+    real_t lbA[4] = {F_min(0), F_min(1), F_min(2), T_constr_min};
 
     F_min(2) = kl(2) * (-0.1) + dl(2) * xdot(2);
-    real_t lbA[3] = {F_min(0), F_min(1), F_min(2)};
-    real_t ubA[3] = {F_max(0), F_max(1), F_max(2)};
+
+
 
     int_t nWSR = 10;
     Options options;
-    options.printLevel = PL_LOW;
+    options.printLevel = PL_NONE;
     // redeclare solver with options
     min_problem.setOptions(options);
     min_problem.init(H, g, A, lb, ub, lbA, ubA, nWSR);
 
     real_t xOpt[3];
+    int_t ret_val;
 
-    min_problem.getPrimalSolution(xOpt);
-    stiffness << xOpt[0], xOpt[1], xOpt[2],50.0,50.0,50.0;
+    ret_val = getSimpleStatus(min_problem.getPrimalSolution(xOpt));
+    if (ret_val != SUCCESSFUL_RETURN){
+      stiffness << kd_min(0), kd_min(1), kd_min(2), 50.0,50.0,50.0;
+      energy_var_stiff = (x_d-x).transpose() * (kd - kd_min).asDiagonal() * velocity_error;
+      tank_energy = tank_energy_threshold; // + (energy_var_stiff)*deltaT;
+      return stiffness;
+    }
+    // cout << "ret_val: " << ret_val << endl;
+    stiffness << xOpt[0], xOpt[1], xOpt[2], 50.0,50.0,50.0;
     kd << stiffness(0), stiffness(1), stiffness(2);
 
-    if (old_tank_energy < tank_energy_threshold)
-    {
-      // empty tank
-      energy_var_stiff = 0;
-    }
-    else
-    {
-      energy_var_stiff = x.transpose() * ((kd - kd_min).asDiagonal()) * xdot_mat;
-    }
+    
 
 
     // compute energy tank (previous + derivative of current*delta_T) -> EQUATION 16
-    rclcpp::Duration deltaT_ros = current_time - old_time;
-    double deltaT = deltaT_ros.nanoseconds() * 1e-9;
-    tank_energy = old_tank_energy + (energy_var_stiff)*deltaT;
+    energy_var_stiff = (x_d - x).transpose() * ((kd - kd_min).asDiagonal()) * velocity_error;
+    tank_energy = old_tank_energy + energy_var_stiff * deltaT;
 
-    if (tank_energy < tank_energy_threshold){
-      tank_energy = tank_energy_threshold;
-    }
     print_index++;
     if (print_index % 20 == 0)
     {
       cout << "#########################################################" << endl;
+      cout << " stiffness : "<<xOpt[2];
       cout<<" KD-KMIN: "<<endl<< (kd-kd_min)<<endl;
       cout << "deltaX_ext: " << (x_d(2) - x(2)) << "  | deltaX_mat: " << -(sl(2) - l(2)) << endl;
       cout << "Kd: " << kd(0) << " " << kd(1) << " " << kd(2) << endl;
-      cout << "Tank: " << tank_energy << " | Tank_dot: " << energy_var_stiff <<" |  threshold: " << -T_constr_min << endl;
-      cout << "F_ext: " << kd(2) * (x_d(2) - x(2)) << "|  F_des" << F_ref(2) << "|  F_min: " <<F_min(2) << endl;
+      cout << "Tank: " << tank_energy << " | Tank_dot: " << energy_var_stiff <<" |  threshold: " << T_constr_min << endl;
+      cout << "F_ext: " << kd(2) * (x_d(2) - x(2)) << "|  F_des: " << F_ref(2) << "|  F_min: " <<F_min(2) << endl;
+      // cout<< "X: "<< x(2) <<endl;
     }
 
     std_msgs::msg::Float64MultiArray m_data_msg;
@@ -390,7 +412,7 @@ namespace cartesian_compliance_controller
 
     };
     m_data_publisher->publish(m_data_msg);
-
+    
     old_tank_energy = tank_energy;
     return stiffness;
   }
