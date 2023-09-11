@@ -37,6 +37,7 @@ void  dataReader( std::vector<double>& x_coordinates, std::vector<double>& y_coo
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < m; ++j) {
             z_file >> z_values[i][j];
+            z_values[i][j] += 0.0015;
         }
     }
     z_file.close();

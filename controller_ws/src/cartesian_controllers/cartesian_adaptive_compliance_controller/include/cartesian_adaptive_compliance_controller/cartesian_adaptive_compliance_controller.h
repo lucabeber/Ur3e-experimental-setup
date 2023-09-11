@@ -66,7 +66,7 @@ class CartesianAdaptiveComplianceController
     std::string             m_compliance_ref_link;
 
     const ctrl::Vector3D    Q = {3200,3200,3200};
-    const ctrl::Vector3D    R = {1, 1, 1};
+    const ctrl::Vector3D    R = {0.01, 0.01, 0.01};
     ctrl::Vector3D          kd = {0,0,0};
     ctrl::Vector6D          stiffness = {0,0,0,0,0,0};
     ctrl::Vector3D          kd_max = {1000, 1000, 1000};

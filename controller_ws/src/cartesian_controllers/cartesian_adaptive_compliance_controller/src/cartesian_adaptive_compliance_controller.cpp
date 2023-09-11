@@ -246,7 +246,8 @@ namespace cartesian_adaptive_compliance_controller
     getEndEffectorPoseReal();
 
     rclcpp::Duration deltaT_ros = current_time - old_time;
-    m_deltaT = 1.0/500.0;//m_deltaT = deltaT_ros.nanoseconds() * 1e-9;
+    
+    m_deltaT = deltaT_ros.nanoseconds() * 1e-9;
     // retrieve target position
     ctrl::Vector3D x;
     x(0) = m_x(0);
@@ -285,14 +286,14 @@ namespace cartesian_adaptive_compliance_controller
     // F_ref
     ctrl::Vector3D F_ref = {0.0, 0.0, 0.0};
 
-    if (x(2) < 0.19)//< z_value)
+    if (x(2) < z_value)
     {
       // penetrating material
       l(2) = x(2);
       kl = {kl_, kl_, kl_};
       dl = {dl_, dl_, dl_};
       F_ref(2) = - 7.0;
-      // F_min(2) = -(stiffness_value * pow(0.03,1.5) - damping_value * pow(0.03,1.5) * xdot(2));
+      F_min(2) = -(stiffness_value * pow(0.03,1.5) - damping_value * pow(0.03,1.5) * xdot(2));
     }
     else
     {
@@ -301,7 +302,7 @@ namespace cartesian_adaptive_compliance_controller
       kl = {kl_, kl_, kl_};
       dl = {dl_, dl_, dl_};
       F_ref(2) = 0.0;
-      // F_min(2) = -F_max(2);
+      F_min(2) = -F_max(2);
     }
 
     if (old_tank_energy >= 1.0)
@@ -378,7 +379,7 @@ namespace cartesian_adaptive_compliance_controller
     else
     {
       T_constr_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error + (tank_energy_threshold-old_tank_energy)/m_deltaT;
-      T_dot_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error - 0.02;
+      T_dot_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error - 0.0001;
     }
     
     real_t A[5 * 3] = {
@@ -407,7 +408,6 @@ namespace cartesian_adaptive_compliance_controller
       T_dot_min
     };
 
-    cout<<"pre qp"<<endl;
     int_t ret_val;
     int_t nWSR = 10;
     Options options;
@@ -415,7 +415,6 @@ namespace cartesian_adaptive_compliance_controller
     // redeclare solver with options
     min_problem.setOptions(options);
     ret_val = getSimpleStatus(min_problem.init(H, g, A, lb, ub, lbA, ubA, nWSR));
-    cout<<"post qp"<<endl;
     real_t xOpt[3];
     
     min_problem.getPrimalSolution(xOpt);
@@ -438,15 +437,16 @@ namespace cartesian_adaptive_compliance_controller
     tank_energy = old_tank_energy + (energy_var_stiff + energy_var_damping) * m_deltaT;
 
     print_index++;
-    if (1)//(print_index % 20 == 0)
+    if (print_index % 100 == 0)
     {
       cout << "#########################################################" << endl;
-      cout << " z_pos : "<<x(2)<< " | surf: "<< z_value << endl;
-      cout<<" KD-KMIN: "<<endl<< (kd-kd_min)<<endl;
-      cout << "deltaX_ext: " << position_error(2) << "  | deltaX_dot: " << velocity_error(2) << endl;
+      cout << " z_pos : "<<x(2) << " | des "<< x_d(2)<< " | surf: "<< z_value << endl;
+      cout << "EE velocity: " << velocity_error(2) << endl;
+      // cout<<" KD-KMIN: "<<endl<< (kd-kd_min)<<endl;
+      // cout << "deltaX_ext: " << position_error(2) << "  | deltaX_dot: " << velocity_error(2) << endl;
       cout << "Kd: " << kd(0) << " " << kd(1) << " " << kd(2) << endl;
       cout << "Tank: " << tank_energy << " | Tank_dot: " << (energy_var_stiff + energy_var_damping) * m_deltaT <<" |  threshold: " << T_constr_min << endl;
-      cout << "F_ext: " << kd(2) * position_error(2) << "|  F_des: " << F_ref(2) << "|  F_min: " << F_min(2) << endl;
+      cout << "F_ext: " << kd(2) * position_error(2) << "|  F_des: " << F_ref(2) << "|  F_min: " << F_min(2) << " | F_ft: " << m_ft_sensor_wrench(2) << endl;
       cout << "Stiffness: " << stiffness_value << " | Damping: " << damping_value << endl; 
       // cout<< "X: "<< x(2) <<endl;
     }
