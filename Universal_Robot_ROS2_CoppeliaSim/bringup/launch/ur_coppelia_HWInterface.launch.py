@@ -60,10 +60,13 @@ def generate_launch_description():
             ('motion_control_handle/target_frame', 'target_frame'),
             ('cartesian_motion_controller/target_frame', 'target_frame'),
             ('cartesian_compliance_controller/target_frame', 'target_frame'),
+            ('cartesian_adaptive_compliance_controller/target_frame', 'target_frame'),
             ('cartesian_force_controller/target_wrench', 'target_wrench'),
             ('cartesian_compliance_controller/target_wrench', 'target_wrench'),
+            ('cartesian_adaptive_compliance_controller/target_wrench', 'target_wrench'),
             ('cartesian_force_controller/ft_sensor_wrench', 'ft_sensor_wrench'),
             ('cartesian_compliance_controller/ft_sensor_wrench', 'ft_sensor_wrench'),
+            ('cartesian_adaptive_compliance_controller/ft_sensor_wrench', 'ft_sensor_wrench'),
             ('end_effector_controller/target_frame', 'target_frame'),
             ('end_effector_controller/target_wrench', 'target_wrench'),
             ('end_effector_controller/ft_sensor_wrench', 'ft_sensor_wrench'),
@@ -81,7 +84,14 @@ def generate_launch_description():
     cartesian_compliance_controller_spawner = Node(
         package="controller_manager",
         executable=spawner,
-        arguments=["cartesian_compliance_controller", "-c", "/controller_manager"],
+        arguments=["cartesian_compliance_controller", "--stopped", "-c", "/controller_manager"],
+        parameters=[{"use_sim_time": use_sim_time}]
+    )
+
+    cartesian_adaptive_compliance_controller_spawner = Node(
+        package="controller_manager",
+        executable=spawner,
+        arguments=["cartesian_adaptive_compliance_controller", "-c", "/controller_manager"],
         parameters=[{"use_sim_time": use_sim_time}]
     )
     cartesian_force_controller_spawner = Node(
@@ -99,7 +109,7 @@ def generate_launch_description():
     motion_control_handle_spawner = Node(
         package="controller_manager",
         executable=spawner,
-        arguments=["motion_control_handle", "-c", "/controller_manager"],
+        arguments=["motion_control_handle",  "-c", "/controller_manager"],
         parameters=[{"use_sim_time": use_sim_time}]
     )
     joint_trajectory_controller_spawner = Node(
@@ -150,6 +160,7 @@ def generate_launch_description():
         control_node,
         joint_state_broadcaster_spawner,
         cartesian_compliance_controller_spawner,
+        cartesian_adaptive_compliance_controller_spawner,
         cartesian_force_controller_spawner,
         cartesian_motion_controller_spawner,
         motion_control_handle_spawner,

@@ -39,6 +39,7 @@ namespace coppeliasim_HWInterface
       for (int i = 0; i < 6; i++)
       {
         current_joint_state.position[i] = state->position[i];
+        current_joint_state.velocity[i] = state->velocity[i];
       }
     };
     command_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/coppelia_set_joints", 0);
@@ -105,11 +106,11 @@ namespace coppeliasim_HWInterface
         return hardware_interface::CallbackReturn::ERROR;
       }
 
-      if (joint.state_interfaces.size() != 1)
+      if (joint.state_interfaces.size() != 2)
       {
         RCLCPP_FATAL(
             rclcpp::get_logger("RRBotSystemPositionOnlyHardware"),
-            "Joint '%s' has %zu state interface. 1 expected.", joint.name.c_str(),
+            "Joint '%s' has %zu state interface. 2 expected.", joint.name.c_str(),
             joint.state_interfaces.size());
         return hardware_interface::CallbackReturn::ERROR;
       }
@@ -120,6 +121,14 @@ namespace coppeliasim_HWInterface
             rclcpp::get_logger("RRBotSystemPositionOnlyHardware"),
             "Joint '%s' have %s state interface. '%s' expected.", joint.name.c_str(),
             joint.state_interfaces[0].name.c_str(), hardware_interface::HW_IF_POSITION);
+        return hardware_interface::CallbackReturn::ERROR;
+      }
+      if (joint.state_interfaces[1].name != hardware_interface::HW_IF_VELOCITY)
+      {
+        RCLCPP_FATAL(
+            rclcpp::get_logger("FrankaEffortHardware"),
+            "Joint '%s' have %s state interface. '%s' expected.", joint.name.c_str(),
+            joint.state_interfaces[0].name.c_str(), hardware_interface::HW_IF_VELOCITY);
         return hardware_interface::CallbackReturn::ERROR;
       }
     }
@@ -234,6 +243,7 @@ namespace coppeliasim_HWInterface
     {
       hw_pos_[i] = current_joint_state.position[i];
       hw_vel_[i] = current_joint_state.velocity[i];
+          
     }
     return hardware_interface::return_type::OK;
   }

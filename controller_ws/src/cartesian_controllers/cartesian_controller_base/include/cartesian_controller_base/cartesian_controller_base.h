@@ -189,6 +189,8 @@ class CartesianControllerBase : public controller_interface::ControllerInterface
 
     std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface> >
       m_joint_state_pos_handles;
+    std::vector<std::reference_wrapper<hardware_interface::LoanedStateInterface> >
+      m_joint_state_vel_handles;
 
   private:
 
@@ -220,6 +222,7 @@ class CartesianControllerBase : public controller_interface::ControllerInterface
       m_feedback_twist_publisher;
 
     std::vector<std::string> m_cmd_interface_types;
+    std::vector<std::string> m_state_interface_types;
     std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> m_joint_cmd_pos_handles;
     std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>> m_joint_cmd_vel_handles;
 

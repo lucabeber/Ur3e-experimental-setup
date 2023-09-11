@@ -76,6 +76,8 @@ namespace cartesian_adaptive_compliance_controller
     // Make sure sensor wrenches are interpreted correctly
     ForceBase::setFtSensorReferenceFrame(m_compliance_ref_link);
     
+    m_fk_solver.reset(new KDL::ChainFkSolverVel_recursive(Base::m_robot_chain));
+
     // Read data from files
     dataReader(m_x_coordinates, m_y_coordinates, m_z_values, m_stiffness_values, m_damping_values);
     cout << m_x_coordinates.size() << " " << m_y_coordinates.size() << " " << m_z_values.size() << " " << m_stiffness_values.size() << " " << m_damping_values.size() << endl;
@@ -99,8 +101,8 @@ namespace cartesian_adaptive_compliance_controller
         std::bind(&CartesianAdaptiveComplianceController::ftSensorWrenchCallback, this, std::placeholders::_1));
     // Publisher
     m_data_publisher = get_node()->create_publisher<std_msgs::msg::Float64MultiArray>(
-    std::string("/stiffness_data"), 10);
-  // Publishers
+    std::string("/adaptive_stiffness_data"), 10);
+
     m_target_pose_publisher = get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(
     get_node()->get_name() + std::string("/target_frame"), 10);
 
@@ -155,6 +157,14 @@ namespace cartesian_adaptive_compliance_controller
     // Synchronize the internal model and the real robot
     Base::m_ik_solver->synchronizeJointPositions(Base::m_joint_state_pos_handles);
 
+    ctrl::Vector6D tmp = CartesianAdaptiveComplianceController::computeStiffness();
+    tmp[3] = get_node()->get_parameter("stiffness.rot_x").as_double();
+    tmp[4] = get_node()->get_parameter("stiffness.rot_y").as_double();
+    tmp[5] = get_node()->get_parameter("stiffness.rot_z").as_double();
+    
+    m_stiffness = tmp.asDiagonal();
+    m_damping = 2.0 * m_stiffness.cwiseSqrt();
+
     // Control the robot motion in such a way that the resulting net force
     // vanishes. This internal control needs some simulation time steps.
     for (int i = 0; i < Base::m_iterations; ++i)
@@ -205,26 +215,15 @@ namespace cartesian_adaptive_compliance_controller
   ctrl::Vector6D CartesianAdaptiveComplianceController::computeComplianceError()
   {
 
-    ctrl::Vector6D tmp = CartesianAdaptiveComplianceController::computeStiffness();
-    tmp[3] = get_node()->get_parameter("stiffness.rot_x").as_double();
-    tmp[4] = get_node()->get_parameter("stiffness.rot_y").as_double();
-    tmp[5] = get_node()->get_parameter("stiffness.rot_z").as_double();
-
-    m_stiffness = tmp.asDiagonal();
-    m_damping = 2.0 * m_stiffness.cwiseSqrt();
-
     ctrl::Vector6D error = computeMotionError();
 
     ctrl::Vector6D net_force =
-
         // Spring force in base orientation
         Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) * error
         // Damping force in base orientation
-        + Base::displayInBaseLink(m_damping, m_compliance_ref_link) * (error - m_prev_error)/m_deltaT
+        - Base::displayInBaseLink(m_damping, m_compliance_ref_link) * Base::m_ik_solver->getEndEffectorVel()
         // Sensor and target force in base orientation
         + ForceBase::computeForceError();
-
-    m_prev_error = error;
 
     return net_force;
   }
@@ -240,17 +239,20 @@ namespace cartesian_adaptive_compliance_controller
     m_ft_sensor_wrench(1) = tmp[1];
     m_ft_sensor_wrench(2) = tmp[2];
   }
+
   ctrl::Vector6D CartesianAdaptiveComplianceController::computeStiffness()
   {
     USING_NAMESPACE_QPOASES
-    
+    getEndEffectorPoseReal();
+
     rclcpp::Duration deltaT_ros = current_time - old_time;
-    m_deltaT = 1.0/500.0; // m_deltaT = deltaT_ros.nanoseconds() * 1e-9;
+    m_deltaT = 1.0/500.0;//m_deltaT = deltaT_ros.nanoseconds() * 1e-9;
     // retrieve target position
     ctrl::Vector3D x;
-    x(0) = MotionBase::m_current_frame.p.x();
-    x(1) = MotionBase::m_current_frame.p.y();
-    x(2) = MotionBase::m_current_frame.p.z();
+    x(0) = m_x(0);
+    x(1) = m_x(1);
+    x(2) = m_x(2);
+
     // retrieve current position
     ctrl::Vector3D x_d;
     x_d(0) = MotionBase::m_target_frame.p.x();
@@ -283,7 +285,7 @@ namespace cartesian_adaptive_compliance_controller
     // F_ref
     ctrl::Vector3D F_ref = {0.0, 0.0, 0.0};
 
-    if (x(2) < z_value)
+    if (x(2) < 0.19)//< z_value)
     {
       // penetrating material
       l(2) = x(2);
@@ -317,9 +319,9 @@ namespace cartesian_adaptive_compliance_controller
     // Update energy
     // compute w_transpose * x_tilde_dot -> EQUATION 14-15
     ctrl::Vector3D velocity_error;
-    velocity_error << (x_d(0)-x_d_old(0))/m_deltaT - xdot(0), 
-                      (x_d(1)-x_d_old(1))/m_deltaT - xdot(1), 
-                      (x_d(2)-x_d_old(2))/m_deltaT - xdot(2);
+    velocity_error << -m_x_dot(0), 
+                      -m_x_dot(1), 
+                      -m_x_dot(2);
     
     
 
@@ -405,7 +407,7 @@ namespace cartesian_adaptive_compliance_controller
       T_dot_min
     };
 
-
+    cout<<"pre qp"<<endl;
     int_t ret_val;
     int_t nWSR = 10;
     Options options;
@@ -413,17 +415,15 @@ namespace cartesian_adaptive_compliance_controller
     // redeclare solver with options
     min_problem.setOptions(options);
     ret_val = getSimpleStatus(min_problem.init(H, g, A, lb, ub, lbA, ubA, nWSR));
-
+    cout<<"post qp"<<endl;
     real_t xOpt[3];
     
     min_problem.getPrimalSolution(xOpt);
     
     if (ret_val != SUCCESSFUL_RETURN){
-      print_index++;
-      if (print_index % 20 == 0)
-      {
-        cout<< "QP solver error: " << ret_val << endl;
-      }
+      
+      cout<< "QP solver error: " << ret_val << endl;
+
       stiffness << kd_min(0), kd_min(1), kd_min(2), 50.0,50.0,50.0;
       tank_energy = old_tank_energy + energy_var_damping * m_deltaT; // + (energy_var_stiff)*m_deltaT;
       old_tank_energy = tank_energy;
@@ -433,15 +433,12 @@ namespace cartesian_adaptive_compliance_controller
     stiffness << xOpt[0], xOpt[1], xOpt[2], 50.0,50.0,50.0;
     kd << stiffness(0), stiffness(1), stiffness(2);
 
-    
-
-
     // compute energy tank (previous + derivative of current*delta_T) -> EQUATION 16
     energy_var_stiff = position_error.transpose() * ((kd - kd_min).asDiagonal()) * velocity_error;
     tank_energy = old_tank_energy + (energy_var_stiff + energy_var_damping) * m_deltaT;
 
     print_index++;
-    if (print_index % 20 == 0)
+    if (1)//(print_index % 20 == 0)
     {
       cout << "#########################################################" << endl;
       cout << " z_pos : "<<x(2)<< " | surf: "<< z_value << endl;
@@ -471,6 +468,31 @@ namespace cartesian_adaptive_compliance_controller
     
     old_tank_energy = tank_energy;
     return stiffness;
+  }
+
+  void CartesianAdaptiveComplianceController::getEndEffectorPoseReal()
+  {
+    KDL::JntArray positions(Base::m_joint_state_pos_handles.size());
+    KDL::JntArray velocities(Base::m_joint_state_vel_handles.size());
+    for (size_t i = 0; i < Base::m_joint_state_pos_handles.size(); ++i)
+    {
+      positions(i) = Base::m_joint_state_pos_handles[i].get().get_value();
+      velocities(i) = Base::m_joint_state_vel_handles[i].get().get_value();
+    }
+
+    KDL::JntArrayVel joint_data(positions,velocities);
+    KDL::FrameVel tmp;
+    m_fk_solver->JntToCart(joint_data, tmp);
+
+
+    m_x(0) = tmp.p.p.x();
+    m_x(1) = tmp.p.p.y();
+    m_x(2) = tmp.p.p.z();
+
+    m_x_dot(0) = tmp.p.v.x();
+    m_x_dot(1) = tmp.p.v.y();
+    m_x_dot(2) = tmp.p.v.z();
+
   }
 } // namespace
 // Pluginlib

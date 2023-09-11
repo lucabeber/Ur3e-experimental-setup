@@ -77,10 +77,13 @@ controller_interface::InterfaceConfiguration CartesianControllerBase::state_inte
 {
   controller_interface::InterfaceConfiguration conf;
   conf.type = controller_interface::interface_configuration_type::INDIVIDUAL;
-  conf.names.reserve(m_joint_names.size()); // Only position
-  for (const auto & joint_name : m_joint_names)
+  conf.names.reserve(m_joint_names.size() * 2);
+  for (const auto& type : m_state_interface_types)
   {
-    conf.names.push_back(joint_name + "/position");
+    for (const auto & joint_name : m_joint_names)
+    {
+      conf.names.push_back(joint_name + std::string("/").append(type));
+    }
   }
   return conf;
 }
@@ -204,6 +207,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Cartes
     RCLCPP_ERROR(get_node()->get_logger(), "joints array is empty");
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
   }
+
+  m_state_interface_types.push_back("position");
+  m_state_interface_types.push_back("velocity");
 
   // Parse joint limits
   KDL::JntArray upper_pos_limits(m_joint_names.size());
@@ -334,6 +340,20 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Cartes
     return CallbackReturn::ERROR;
   }
 
+  // Velocity 
+  if (!controller_interface::get_ordered_interfaces(state_interfaces_,
+                                                    m_joint_names,
+                                                    hardware_interface::HW_IF_VELOCITY,
+                                                    m_joint_state_vel_handles))                                                 
+  {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                "Expected %zu '%s' state interfaces, got %zu.",
+                m_joint_names.size(),
+                hardware_interface::HW_IF_VELOCITY,
+                m_joint_state_vel_handles.size());
+    return CallbackReturn::ERROR;
+  }
+
   // Copy joint state to internal simulation
   if (!m_ik_solver->setStartState(m_joint_state_pos_handles))
   {
@@ -360,6 +380,7 @@ CartesianControllerBase::on_shutdown(const rclcpp_lifecycle::State& previous_sta
     m_joint_cmd_pos_handles.clear();
     m_joint_cmd_vel_handles.clear();
     m_joint_state_pos_handles.clear();
+    m_joint_state_vel_handles.clear();
     this->release_interfaces();
     m_active = false;
   }

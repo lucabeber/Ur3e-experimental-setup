@@ -6,6 +6,8 @@
 #include <cartesian_force_controller/cartesian_force_controller.h>
 #include <cartesian_motion_controller/cartesian_motion_controller.h>
 #include <controller_interface/controller_interface.hpp>
+#include <kdl/chain.hpp>
+#include <kdl/chainfksolvervel_recursive.hpp>
 #include <cartesian_adaptive_compliance_controller/qpOASES.hpp>
 #include <cartesian_adaptive_compliance_controller/data_reader.h>
 #include "std_msgs/msg/float64_multi_array.hpp"
@@ -52,8 +54,12 @@ class CartesianAdaptiveComplianceController
      *
      * @return The remaining error wrench, given in robot base frame
      */
+    void getEndEffectorPoseReal();
+    
     ctrl::Vector6D          computeStiffness();
     ctrl::Vector6D          computeComplianceError();
+    std::shared_ptr<
+      KDL::ChainFkSolverVel_recursive>  m_fk_solver;
 
     ctrl::Matrix6D          m_stiffness;
     ctrl::Matrix6D          m_damping;
@@ -72,6 +78,9 @@ class CartesianAdaptiveComplianceController
     ctrl::Vector6D          m_prev_error;
     double                  m_deltaT;
     double                  m_sigma;
+
+    ctrl::Vector3D          m_x;
+    ctrl::Vector3D          m_x_dot;
 
     std::vector<ctrl::Vector3D>   m_external_forces;
     std::vector<ctrl::Vector3D>   m_desired_forces;
