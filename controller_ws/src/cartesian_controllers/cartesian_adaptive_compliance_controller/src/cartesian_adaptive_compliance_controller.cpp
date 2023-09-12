@@ -77,7 +77,7 @@ namespace cartesian_adaptive_compliance_controller
     ForceBase::setFtSensorReferenceFrame(m_compliance_ref_link);
     
     m_fk_solver.reset(new KDL::ChainFkSolverVel_recursive(Base::m_robot_chain));
-
+    // old_z = 0.098;
     // Read data from files
     dataReader(m_x_coordinates, m_y_coordinates, m_z_values, m_stiffness_values, m_damping_values);
     cout << m_x_coordinates.size() << " " << m_y_coordinates.size() << " " << m_z_values.size() << " " << m_stiffness_values.size() << " " << m_damping_values.size() << endl;
@@ -247,6 +247,9 @@ namespace cartesian_adaptive_compliance_controller
 
     rclcpp::Duration deltaT_ros = current_time - old_time;
     
+    double max_pen = 0.01;
+    double power_limit = 0.1;
+
     m_deltaT = deltaT_ros.nanoseconds() * 1e-9;
     // retrieve target position
     ctrl::Vector3D x;
@@ -260,6 +263,12 @@ namespace cartesian_adaptive_compliance_controller
     x_d(1) = MotionBase::m_target_frame.p.y();
     x_d(2) = MotionBase::m_target_frame.p.z();
 
+    // retrieve current velocity
+    ctrl::Vector3D velocity_error;
+    velocity_error << -m_x_dot(0), 
+                      -m_x_dot(1), 
+                      -m_x_dot(2);
+
     // Get the position of the data corresponding to the current position
     int x_index = findClosestIndex(m_x_coordinates, x(0));
     int y_index = findClosestIndex(m_y_coordinates, x(1));
@@ -268,6 +277,9 @@ namespace cartesian_adaptive_compliance_controller
     double z_value = m_z_values[x_index][y_index];
     double stiffness_value = m_stiffness_values[x_index][y_index];
     double damping_value = m_damping_values[x_index][y_index];
+
+    double surf_vel = (z_value - old_z) / m_deltaT;
+    old_z = z_value;
 
     // retrieve current velocity
     ctrl::Vector6D xdot = Base::m_ik_solver->getEndEffectorVel();
@@ -292,8 +304,8 @@ namespace cartesian_adaptive_compliance_controller
       // l(2) = x(2);
       // kl = {kl_, kl_, kl_};
       // dl = {dl_, dl_, dl_};
-      F_ref(2) = - 7.0;
-      F_min(2) = -F_max(2);//-(stiffness_value * pow(0.03,1.5) - damping_value * pow(0.03,1.5) * xdot(2));
+      F_ref(2) = -(stiffness_value * pow(max_pen,1.35)- damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel));
+      F_min(2) = -F_max(2);
     }
     else
     {
@@ -318,13 +330,6 @@ namespace cartesian_adaptive_compliance_controller
     position_error = x_d - x;
 
     // Update energy
-    // compute w_transpose * x_tilde_dot -> EQUATION 14-15
-    ctrl::Vector3D velocity_error;
-    velocity_error << -m_x_dot(0), 
-                      -m_x_dot(1), 
-                      -m_x_dot(2);
-    
-    
 
     real_t H[3 * 3] =
         {
@@ -374,12 +379,46 @@ namespace cartesian_adaptive_compliance_controller
       stiffness << kd_min(0), kd_min(1), kd_min(2), 50.0,50.0,50.0;
       tank_energy = tank_energy_threshold + energy_var_damping * m_deltaT; // + (energy_var_stiff)*m_deltaT;
       // old_tank_energy = tank_energy;
+      std_msgs::msg::Float64MultiArray m_data_msg;
+      m_data_msg.data = {
+        (current_time.nanoseconds() * 1e-9), // Time
+        x(0), // x ee
+        x(1), // y ee
+        x(2),  // z ee
+        x_d(0), // x_d ee
+        x_d(1), // y_d ee
+        x_d(2), // z_d ee
+        kd(2) * position_error(2) + 2*0.707*sqrt(kd(2)) * velocity_error(2), // F_ext
+        m_ft_sensor_wrench(0), // F_ft
+        m_ft_sensor_wrench(1), // F_ft
+        m_ft_sensor_wrench(2), // F_ft
+        F_ref(2), // F_ref
+        tank_energy, // Tank
+        (energy_var_stiff + energy_var_damping) * m_deltaT, // Tank_dot
+        kd(0), // Kd_x
+        kd(1), // Kd_y
+        kd(2), // Kd_z
+        kd_max(2), // Kd_z max
+        kd_min(2), // Kd_z min
+        (z_value + 0.0025 - x(2)), // penetration
+        stiffness_value, // K_surf
+        damping_value, // D_surf
+        F_min(2), // F_min
+        (stiffness_value * pow((z_value + 0.0025 - x(2)),1.35) - damping_value * pow((z_value + 0.0025 - x(2)),1.35) * (m_x_dot(2)-surf_vel)),
+        max_pen,
+        tank_energy_threshold,
+        power_limit,
+        m_x_dot(0),
+        m_x_dot(1),
+        m_x_dot(2)
+      };
+      m_data_publisher->publish(m_data_msg);
       return stiffness;
     }
     else
     {
       T_constr_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error + (tank_energy_threshold-tank_energy)/m_deltaT;
-      T_dot_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error - 0.005;
+      T_dot_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error - power_limit;
     }
     
     real_t A[5 * 3] = {
@@ -426,6 +465,40 @@ namespace cartesian_adaptive_compliance_controller
       stiffness << kd_min(0), kd_min(1), kd_min(2), 50.0,50.0,50.0;
       tank_energy += energy_var_damping * m_deltaT; // + (energy_var_stiff)*m_deltaT;
       // old_tank_energy = tank_energy;
+      std_msgs::msg::Float64MultiArray m_data_msg;
+      m_data_msg.data = {
+        (current_time.nanoseconds() * 1e-9), // Time
+        x(0), // x ee
+        x(1), // y ee
+        x(2),  // z ee
+        x_d(0), // x_d ee
+        x_d(1), // y_d ee
+        x_d(2), // z_d ee
+        kd(2) * position_error(2) + 2*0.707*sqrt(kd(2)) * velocity_error(2), // F_ext
+        m_ft_sensor_wrench(0), // F_ft
+        m_ft_sensor_wrench(1), // F_ft
+        m_ft_sensor_wrench(2), // F_ft
+        F_ref(2), // F_ref
+        tank_energy, // Tank
+        (energy_var_stiff + energy_var_damping) * m_deltaT, // Tank_dot
+        kd(0), // Kd_x
+        kd(1), // Kd_y
+        kd(2), // Kd_z
+        kd_max(2), // Kd_z max
+        kd_min(2), // Kd_z min
+        (z_value + 0.0025 - x(2)), // penetration
+        stiffness_value, // K_surf
+        damping_value, // D_surf
+        F_min(2), // F_min
+        (stiffness_value * pow((z_value + 0.0025 - x(2)),1.35) - damping_value * pow((z_value + 0.0025 - x(2)),1.35) * (m_x_dot(2)-surf_vel)),
+        max_pen,
+        tank_energy_threshold,
+        power_limit,
+        m_x_dot(0),
+        m_x_dot(1),
+        m_x_dot(2)
+      };
+      m_data_publisher->publish(m_data_msg);
       return stiffness;
     }
 
@@ -447,7 +520,7 @@ namespace cartesian_adaptive_compliance_controller
       // cout << "deltaX_ext: " << position_error(2) << "  | deltaX_dot: " << velocity_error(2) << endl;
       cout << "Kd: " << kd(0) << " " << kd(1) << " " << kd(2) << endl;
       cout << "Tank: " << tank_energy << " | Tank_dot: " << (energy_var_stiff + energy_var_damping) * m_deltaT <<" |  threshold: " << T_constr_min << endl;
-      cout << "F_ext: " << kd(2) * position_error(2) - 2*0.707*sqrt(kd(2)) * velocity_error(2) << "|  F_des: " << F_ref(2) << "|  F_min: " << F_min(2) << " | F_ft: " << m_ft_sensor_wrench(2) << endl;
+      cout << "F_ext: " << kd(2) * position_error(2) + 2*0.707*sqrt(kd(2)) * velocity_error(2) << "|  F_des: " << F_ref(2) << "|  F_min: " << F_min(2) << " | F_ft: " << m_ft_sensor_wrench(2) << endl;
       cout << "Stiffness: " << stiffness_value << " | Damping: " << damping_value << endl; 
       cout << "deltaT "<< m_deltaT << endl;
       // cout<< "X: "<< x(2) <<endl;
@@ -456,15 +529,35 @@ namespace cartesian_adaptive_compliance_controller
     std_msgs::msg::Float64MultiArray m_data_msg;
     m_data_msg.data = {
       (current_time.nanoseconds() * 1e-9), // Time
-      position_error(2),  // deltaX_ext
-      //(sl(2) - l(2)), // deltaX_mat
-      kd(2) * position_error(2), // F_ext
-      // (kl(2) * (sl(2) - l(2)) - dl(2) * xdot(2)), // F_mat
+      x(0), // x ee
+      x(1), // y ee
+      x(2),  // z ee
+      x_d(0), // x_d ee
+      x_d(1), // y_d ee
+      x_d(2), // z_d ee
+      kd(2) * position_error(2) + 2*0.707*sqrt(kd(2)) * velocity_error(2), // F_ext
+      m_ft_sensor_wrench(0), // F_ft
+      m_ft_sensor_wrench(1), // F_ft
+      m_ft_sensor_wrench(2), // F_ft
       F_ref(2), // F_ref
-      m_ft_sensor_wrench(2),// F/T sensor
+      tank_energy, // Tank
+      (energy_var_stiff + energy_var_damping) * m_deltaT, // Tank_dot
+      kd(0), // Kd_x
+      kd(1), // Kd_y
       kd(2), // Kd_z
-      kd_min(2) // Kd_z min
-
+      kd_max(2), // Kd_z max
+      kd_min(2), // Kd_z min
+      (z_value + 0.0025 - x(2)), // penetration
+      stiffness_value, // K_surf
+      damping_value, // D_surf
+      F_min(2), // F_min
+      (stiffness_value * pow((z_value + 0.0025 - x(2)),1.35) - damping_value * pow((z_value + 0.0025 - x(2)),1.35) * (m_x_dot(2)-surf_vel)),
+      max_pen,
+      tank_energy_threshold,
+      power_limit,
+      m_x_dot(0),
+      m_x_dot(1),
+      m_x_dot(2)
     };
     m_data_publisher->publish(m_data_msg);
     

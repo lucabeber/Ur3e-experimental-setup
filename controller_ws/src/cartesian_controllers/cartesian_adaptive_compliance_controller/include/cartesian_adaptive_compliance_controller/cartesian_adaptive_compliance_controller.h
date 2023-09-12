@@ -66,7 +66,7 @@ class CartesianAdaptiveComplianceController
     std::string             m_compliance_ref_link;
 
     const ctrl::Vector3D    Q = {3200,3200,3200};
-    const ctrl::Vector3D    R = {0.1, 0.1, 0.1};
+    const ctrl::Vector3D    R = {0.01, 0.01, 0.01};
     ctrl::Vector3D          kd = {0,0,0};
     ctrl::Vector6D          stiffness = {0,0,0,0,0,0};
     ctrl::Vector3D          kd_max = {1000, 1000, 1000};
@@ -97,7 +97,7 @@ class CartesianAdaptiveComplianceController
     double d_pass_damp_int, en_var_stiff_int;
     double energy_var_stiff, energy_var_damping;
     rclcpp::Time old_time,current_time,start_time;
-
+    double old_z;
 
     QProblem min_problem;
     int print_index = 0;

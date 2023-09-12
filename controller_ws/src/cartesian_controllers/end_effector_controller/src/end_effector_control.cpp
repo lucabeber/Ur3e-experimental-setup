@@ -99,6 +99,8 @@ namespace end_effector_controller
     m_current_pose = getEndEffectorPose();
     prev_pos = m_current_pose.pose.position.z;
     m_starting_position = m_current_pose.pose.position;
+    m_starting_position.x = 0.035;
+    m_starting_position.y = -0.36;
     m_grid_position = m_starting_position;
 
     m_ft_sensor_wrench(0) = 0.0;
@@ -231,7 +233,7 @@ namespace end_effector_controller
   void EndEffectorControl::surfaceApproach()
   {
     // If the detected force in the z direction is greater than 0.1 N the phase is finished
-    if (m_ft_sensor_wrench(2) < -0.2 && m_prev_force < -0.1)
+    if (m_current_pose.pose.position.z < 0.09)
     {
       m_phase = 3;
       m_surface = m_current_pose.pose.position.z;
@@ -256,15 +258,17 @@ namespace end_effector_controller
 
     m_pose_publisher->publish(m_target_pose);
   }
+
   void EndEffectorControl::tissuePalpation(const rclcpp::Time &time)
   {
-    m_target_pose.pose.position.x = m_grid_position.x;
+    m_target_pose.pose.position.x = m_starting_position.x - 0.01 * ( - initial_time.nanoseconds() * 1e-9 + time.nanoseconds() * 1e-9);
     m_target_pose.pose.position.y = m_grid_position.y;
-
+    m_target_pose.pose.position.z = 0.085;
     // prova di carico 
-
+    // std::cout << "x: " << m_target_pose.pose.position.x << std::endl;
+    // std::cout << "time: " << time.nanoseconds() * 1e-9 - initial_time.nanoseconds()*1e-9<< std::endl;
     // z position is a sine wave with frequency 10 Hz and amplitude 0.02 m
-    m_target_pose.pose.position.z = m_surface - 0.02 - 0.005 * sin(2 * M_PI * (time.nanoseconds() * 1e-9) * 2.5);
+    //m_target_pose.pose.position.z = m_surface - 0.02 - 0.005 * sin(2 * M_PI * (time.nanoseconds() * 1e-9) * 2.5);
 
     m_target_pose.header.stamp = get_node()->now();
     m_target_pose.header.frame_id = m_robot_base_link;
@@ -310,7 +314,7 @@ namespace end_effector_controller
     }
 
     // If the time is greater than 5 seconds the phase is finished
-    if (time.nanoseconds() * 1e-9 - initial_time.nanoseconds() * 1e-9 > 5)
+    if (time.nanoseconds() * 1e-9 - initial_time.nanoseconds() * 1e-9 > 20)
     {
       m_phase = 4;
       m_palpation_number++;
@@ -339,7 +343,7 @@ namespace end_effector_controller
     // If the end effector is the starting high the phase is finished
     if (abs(m_current_pose.pose.position.z - m_starting_position.z) < 0.005)
     {
-      m_phase = 1;
+      m_phase = 4;
       newStartingPosition();
       m_grid_position.z = m_starting_position.z;
     }
