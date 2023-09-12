@@ -66,11 +66,11 @@ class CartesianAdaptiveComplianceController
     std::string             m_compliance_ref_link;
 
     const ctrl::Vector3D    Q = {3200,3200,3200};
-    const ctrl::Vector3D    R = {0.01, 0.01, 0.01};
+    const ctrl::Vector3D    R = {0.1, 0.1, 0.1};
     ctrl::Vector3D          kd = {0,0,0};
     ctrl::Vector6D          stiffness = {0,0,0,0,0,0};
     ctrl::Vector3D          kd_max = {1000, 1000, 1000};
-    ctrl::Vector3D          kd_min = {300, 300, 300};
+    ctrl::Vector3D          kd_min = {100, 100, 100};
     ctrl::Vector3D          F_max = {15, 15, 15};
     ctrl::Vector3D          F_min = {-15, -15, -15};
     ctrl::Vector3D          x_d_old = {0,0,0};
@@ -91,7 +91,7 @@ class CartesianAdaptiveComplianceController
     double dXt;
     double kl_ = 100;
     double dl_ = 20;
-    double tank_energy, old_tank_energy;
+    double tank_energy;
     double tank_energy_threshold;
     double d_pass_const_stiff, d_pass_damp, d_pass_en;
     double d_pass_damp_int, en_var_stiff_int;

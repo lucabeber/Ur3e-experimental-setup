@@ -114,7 +114,7 @@ namespace cartesian_adaptive_compliance_controller
     old_time = current_time = start_time = get_node()->get_clock()->now();
     Xt = 1.0;
     dXt = 0.0;
-    tank_energy = old_tank_energy = 0.5 * Xt * Xt;
+    tank_energy = 0.5 * Xt * Xt;
     tank_energy_threshold = 0.1;
 
     USING_NAMESPACE_QPOASES
@@ -163,7 +163,7 @@ namespace cartesian_adaptive_compliance_controller
     tmp[5] = get_node()->get_parameter("stiffness.rot_z").as_double();
     
     m_stiffness = tmp.asDiagonal();
-    m_damping = 2.0 * m_stiffness.cwiseSqrt();
+    m_damping = 2.0 * 0.707 * m_stiffness.cwiseSqrt();
 
     // Control the robot motion in such a way that the resulting net force
     // vanishes. This internal control needs some simulation time steps.
@@ -272,40 +272,40 @@ namespace cartesian_adaptive_compliance_controller
     // retrieve current velocity
     ctrl::Vector6D xdot = Base::m_ik_solver->getEndEffectorVel();
 
-    // retrieve material stiffness
-    ctrl::Vector3D kl = {kl_, kl_, kl_};
+    // // retrieve material stiffness
+    // ctrl::Vector3D kl = {kl_, kl_, kl_};
 
-    // define material steady-state position
-    ctrl::Vector3D sl = {0.0, 0.0, 0.12};
-    // define material current position
-    ctrl::Vector3D l = {0.0, 0.0, 0.12};
+    // // define material steady-state position
+    // ctrl::Vector3D sl = {0.0, 0.0, 0.12};
+    // // define material current position
+    // ctrl::Vector3D l = {0.0, 0.0, 0.12};
 
-    // retrieve material damping
-    ctrl::Vector3D dl = {dl_, dl_, dl_};
+    // // retrieve material damping
+    // ctrl::Vector3D dl = {dl_, dl_, dl_};
 
     // F_ref
     ctrl::Vector3D F_ref = {0.0, 0.0, 0.0};
 
-    if (x(2) < z_value)
+    if (x(2) < z_value + 0.0025)
     {
       // penetrating material
-      l(2) = x(2);
-      kl = {kl_, kl_, kl_};
-      dl = {dl_, dl_, dl_};
+      // l(2) = x(2);
+      // kl = {kl_, kl_, kl_};
+      // dl = {dl_, dl_, dl_};
       F_ref(2) = - 7.0;
-      F_min(2) = -(stiffness_value * pow(0.03,1.5) - damping_value * pow(0.03,1.5) * xdot(2));
+      F_min(2) = -F_max(2);//-(stiffness_value * pow(0.03,1.5) - damping_value * pow(0.03,1.5) * xdot(2));
     }
     else
     {
       // free motion
-      l(2) = sl(2);
-      kl = {kl_, kl_, kl_};
-      dl = {dl_, dl_, dl_};
+      // l(2) = sl(2);
+      // kl = {kl_, kl_, kl_};
+      // dl = {dl_, dl_, dl_};
       F_ref(2) = 0.0;
       F_min(2) = -F_max(2);
     }
 
-    if (old_tank_energy >= 1.0)
+    if (tank_energy >= 1.0)
     {
       m_sigma = 0.0;
     }
@@ -328,17 +328,17 @@ namespace cartesian_adaptive_compliance_controller
 
     real_t H[3 * 3] =
         {
-            R(0) + Q(0) * pow(x(0) - x_d(0), 2), 0, 0,
-            0, R(1) + Q(1) * pow(x(1) - x_d(1), 2), 0,
-            0, 0, R(2) + Q(2) * pow(x(2) - x_d(2), 2)
+            R(0) + Q(0) * pow(position_error(0),2), 0, 0,
+            0, R(1) + Q(1) * pow(position_error(1), 2), 0,
+            0, 0, R(2) + Q(2) * pow(position_error(2), 2)
         };
 
 
     // -Kmin1 R1 - Fdx Q1 x1 + kd1 (R1 + Q1 x1^2)
     real_t g[3] = {
-      -kd_min(0) *  R(0) + ( - F_ref(0) + m_damping(0,0) * velocity_error(0)) * position_error(0) * Q(0), // + kd(0) * (R(0) + Q(0) * pow(x_d(0) - x(0),2)),  
-      -kd_min(1) *  R(1) + ( - F_ref(1) + m_damping(1,1) * velocity_error(1)) * position_error(1) * Q(1), // + kd(1) * (R(1) + Q(1) * pow(x_d(1) - x(1),2)),
-      -kd_min(2) *  R(2) + ( - F_ref(2) + m_damping(2,2) * velocity_error(2)) * position_error(2) * Q(2) // + kd(2) * (R(2) + Q(2) * pow(x_d(2) - x(2),2))
+      -kd_min(0) *  R(0) + ( - F_ref(0) + m_damping(0,0) * velocity_error(0) ) * position_error(0) * Q(0), // + kd(0) * (R(0) + Q(0) * pow(x_d(0) - x(0),2)),  
+      -kd_min(1) *  R(1) + ( - F_ref(1) + m_damping(1,1) * velocity_error(1) ) * position_error(1) * Q(1), // + kd(1) * (R(1) + Q(1) * pow(x_d(1) - x(1),2)),
+      -kd_min(2) *  R(2) + ( - F_ref(2) + m_damping(2,2) * velocity_error(2) ) * position_error(2) * Q(2) // + kd(2) * (R(2) + Q(2) * pow(x_d(2) - x(2),2))
     };
       // (R(0) + Q(0) * pow(x_d(0) - x(0), 2)),
       // (R(1) + Q(1) * pow(x_d(1) - x(1), 2)),
@@ -367,19 +367,19 @@ namespace cartesian_adaptive_compliance_controller
 
     energy_var_damping = m_sigma * velocity_error.transpose() * m_damping.block<3,3>(0,0) * velocity_error;
 
-    if (old_tank_energy < tank_energy_threshold)
+    if (tank_energy < tank_energy_threshold)
     {
       // empty tank
       cout << "empty tank" << endl;
       stiffness << kd_min(0), kd_min(1), kd_min(2), 50.0,50.0,50.0;
       tank_energy = tank_energy_threshold + energy_var_damping * m_deltaT; // + (energy_var_stiff)*m_deltaT;
-      old_tank_energy = tank_energy;
+      // old_tank_energy = tank_energy;
       return stiffness;
     }
     else
     {
-      T_constr_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error + (tank_energy_threshold-old_tank_energy)/m_deltaT;
-      T_dot_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error - 0.0001;
+      T_constr_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error + (tank_energy_threshold-tank_energy)/m_deltaT;
+      T_dot_min = - energy_var_damping + position_error.transpose() * kd_min.asDiagonal() * velocity_error - 0.005;
     }
     
     real_t A[5 * 3] = {
@@ -424,30 +424,32 @@ namespace cartesian_adaptive_compliance_controller
       cout<< "QP solver error: " << ret_val << endl;
 
       stiffness << kd_min(0), kd_min(1), kd_min(2), 50.0,50.0,50.0;
-      tank_energy = old_tank_energy + energy_var_damping * m_deltaT; // + (energy_var_stiff)*m_deltaT;
-      old_tank_energy = tank_energy;
+      tank_energy += energy_var_damping * m_deltaT; // + (energy_var_stiff)*m_deltaT;
+      // old_tank_energy = tank_energy;
       return stiffness;
     }
+
     // cout << "ret_val: " << ret_val << endl;
     stiffness << xOpt[0], xOpt[1], xOpt[2], 50.0,50.0,50.0;
     kd << stiffness(0), stiffness(1), stiffness(2);
 
     // compute energy tank (previous + derivative of current*delta_T) -> EQUATION 16
     energy_var_stiff = position_error.transpose() * ((kd - kd_min).asDiagonal()) * velocity_error;
-    tank_energy = old_tank_energy + (energy_var_stiff + energy_var_damping) * m_deltaT;
+    tank_energy += (energy_var_stiff + energy_var_damping) * m_deltaT;
 
     print_index++;
-    if (print_index % 100 == 0)
+    if (print_index % 21 == 0)
     {
       cout << "#########################################################" << endl;
       cout << " z_pos : "<<x(2) << " | des "<< x_d(2)<< " | surf: "<< z_value << endl;
-      cout << "EE velocity: " << velocity_error(2) << endl;
+      cout << "EE velocity: " << velocity_error(2) << " | ik vel" << xdot(2) << endl;
       // cout<<" KD-KMIN: "<<endl<< (kd-kd_min)<<endl;
       // cout << "deltaX_ext: " << position_error(2) << "  | deltaX_dot: " << velocity_error(2) << endl;
       cout << "Kd: " << kd(0) << " " << kd(1) << " " << kd(2) << endl;
       cout << "Tank: " << tank_energy << " | Tank_dot: " << (energy_var_stiff + energy_var_damping) * m_deltaT <<" |  threshold: " << T_constr_min << endl;
-      cout << "F_ext: " << kd(2) * position_error(2) << "|  F_des: " << F_ref(2) << "|  F_min: " << F_min(2) << " | F_ft: " << m_ft_sensor_wrench(2) << endl;
+      cout << "F_ext: " << kd(2) * position_error(2) - 2*0.707*sqrt(kd(2)) * velocity_error(2) << "|  F_des: " << F_ref(2) << "|  F_min: " << F_min(2) << " | F_ft: " << m_ft_sensor_wrench(2) << endl;
       cout << "Stiffness: " << stiffness_value << " | Damping: " << damping_value << endl; 
+      cout << "deltaT "<< m_deltaT << endl;
       // cout<< "X: "<< x(2) <<endl;
     }
 
@@ -455,7 +457,7 @@ namespace cartesian_adaptive_compliance_controller
     m_data_msg.data = {
       (current_time.nanoseconds() * 1e-9), // Time
       position_error(2),  // deltaX_ext
-      (sl(2) - l(2)), // deltaX_mat
+      //(sl(2) - l(2)), // deltaX_mat
       kd(2) * position_error(2), // F_ext
       // (kl(2) * (sl(2) - l(2)) - dl(2) * xdot(2)), // F_mat
       F_ref(2), // F_ref
@@ -466,7 +468,7 @@ namespace cartesian_adaptive_compliance_controller
     };
     m_data_publisher->publish(m_data_msg);
     
-    old_tank_energy = tank_energy;
+    //old_tank_energy = tank_energy;
     return stiffness;
   }
 
