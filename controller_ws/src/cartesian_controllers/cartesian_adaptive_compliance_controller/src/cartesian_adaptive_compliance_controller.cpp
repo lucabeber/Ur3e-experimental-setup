@@ -77,7 +77,7 @@ namespace cartesian_adaptive_compliance_controller
     ForceBase::setFtSensorReferenceFrame(m_compliance_ref_link);
     
     m_fk_solver.reset(new KDL::ChainFkSolverVel_recursive(Base::m_robot_chain));
-    // old_z = 0.098;
+    old_z = 0.098;
     // Read data from files
     dataReader(m_x_coordinates, m_y_coordinates, m_z_values, m_stiffness_values, m_damping_values);
     cout << m_x_coordinates.size() << " " << m_y_coordinates.size() << " " << m_z_values.size() << " " << m_stiffness_values.size() << " " << m_damping_values.size() << endl;
@@ -115,7 +115,7 @@ namespace cartesian_adaptive_compliance_controller
     Xt = 1.0;
     dXt = 0.0;
     tank_energy = 0.5 * Xt * Xt;
-    tank_energy_threshold = 0.1;
+    tank_energy_threshold = 0.4;
 
     USING_NAMESPACE_QPOASES
     Options options;
@@ -127,7 +127,12 @@ namespace cartesian_adaptive_compliance_controller
 
     x_d_old << m_starting_pose(0), m_starting_pose(1), m_starting_pose(2);
     m_prev_error = ctrl::Vector6D::Zero();
-    
+    for (size_t i = 0; i < 10; i++)
+    {
+      m_surf_vel.push(0.0);
+    }
+    m_surf_vel_sum = 0.0;
+
     return TYPE::SUCCESS;
   }
 
@@ -247,7 +252,7 @@ namespace cartesian_adaptive_compliance_controller
 
     rclcpp::Duration deltaT_ros = current_time - old_time;
     
-    double max_pen = 0.01;
+    double max_pen = 0.008;
     double power_limit = 0.1;
 
     m_deltaT = deltaT_ros.nanoseconds() * 1e-9;
@@ -278,8 +283,16 @@ namespace cartesian_adaptive_compliance_controller
     double stiffness_value = m_stiffness_values[x_index][y_index];
     double damping_value = m_damping_values[x_index][y_index];
 
-    double surf_vel = (z_value - old_z) / m_deltaT;
+    m_surf_vel_sum -= m_surf_vel.front();
+    m_surf_vel.pop();
+    double sv = (z_value - old_z) / m_deltaT;
+    m_surf_vel.push(sv);
+    m_surf_vel_sum += sv;
     old_z = z_value;
+
+    
+    // mean of the last 5 values
+    double surf_vel =  m_surf_vel_sum / m_surf_vel.size();
 
     // retrieve current velocity
     ctrl::Vector6D xdot = Base::m_ik_solver->getEndEffectorVel();
@@ -298,14 +311,19 @@ namespace cartesian_adaptive_compliance_controller
     // F_ref
     ctrl::Vector3D F_ref = {0.0, 0.0, 0.0};
 
-    if (x(2) < z_value + 0.0025)
+    // if (x(2) < z_value + 0.0025)
+    if ( m_ft_sensor_wrench(2) < -0.5)
     {
       // penetrating material
       // l(2) = x(2);
       // kl = {kl_, kl_, kl_};
       // dl = {dl_, dl_, dl_};
-      F_ref(2) = -(stiffness_value * pow(max_pen,1.35)- damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel));
-      F_min(2) = -F_max(2);
+      // F_ref(2) = -( stiffness_value * pow((z_value + 0.0025 - x(2)),1.35) - damping_value * pow((z_value + 0.0025 - x(2)),1.35) * (m_x_dot(2)-surf_vel) );
+      // F_min(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
+      F_ref(2) = -7;
+      F_min(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
+      // F_ref(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
+      // F_min(2) = -15;
     }
     else
     {
@@ -410,7 +428,8 @@ namespace cartesian_adaptive_compliance_controller
         power_limit,
         m_x_dot(0),
         m_x_dot(1),
-        m_x_dot(2)
+        m_x_dot(2),
+        surf_vel
       };
       m_data_publisher->publish(m_data_msg);
       return stiffness;
@@ -496,7 +515,8 @@ namespace cartesian_adaptive_compliance_controller
         power_limit,
         m_x_dot(0),
         m_x_dot(1),
-        m_x_dot(2)
+        m_x_dot(2),
+        surf_vel
       };
       m_data_publisher->publish(m_data_msg);
       return stiffness;
@@ -514,7 +534,7 @@ namespace cartesian_adaptive_compliance_controller
     if (print_index % 21 == 0)
     {
       cout << "#########################################################" << endl;
-      cout << " z_pos : "<<x(2) << " | des "<< x_d(2)<< " | surf: "<< z_value << endl;
+      cout << " z_pos : "<<x(2) << " | des "<< x_d(2)<< " | surf: "<< z_value << " | surf vel: " << surf_vel << endl;
       cout << "EE velocity: " << velocity_error(2) << " | ik vel" << xdot(2) << endl;
       // cout<<" KD-KMIN: "<<endl<< (kd-kd_min)<<endl;
       // cout << "deltaX_ext: " << position_error(2) << "  | deltaX_dot: " << velocity_error(2) << endl;
@@ -557,7 +577,8 @@ namespace cartesian_adaptive_compliance_controller
       power_limit,
       m_x_dot(0),
       m_x_dot(1),
-      m_x_dot(2)
+      m_x_dot(2),
+      surf_vel
     };
     m_data_publisher->publish(m_data_msg);
     

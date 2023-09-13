@@ -11,6 +11,7 @@
 #include <cartesian_adaptive_compliance_controller/qpOASES.hpp>
 #include <cartesian_adaptive_compliance_controller/data_reader.h>
 #include "std_msgs/msg/float64_multi_array.hpp"
+#include <queue>
 
 USING_NAMESPACE_QPOASES
 namespace cartesian_adaptive_compliance_controller
@@ -66,11 +67,11 @@ class CartesianAdaptiveComplianceController
     std::string             m_compliance_ref_link;
 
     const ctrl::Vector3D    Q = {3200,3200,3200};
-    const ctrl::Vector3D    R = {0.01, 0.01, 0.01};
+    const ctrl::Vector3D    R = {0.1, 0.1, 0.1};
     ctrl::Vector3D          kd = {0,0,0};
     ctrl::Vector6D          stiffness = {0,0,0,0,0,0};
     ctrl::Vector3D          kd_max = {1000, 1000, 1000};
-    ctrl::Vector3D          kd_min = {100, 100, 100};
+    ctrl::Vector3D          kd_min = {300, 300, 100};
     ctrl::Vector3D          F_max = {15, 15, 15};
     ctrl::Vector3D          F_min = {-15, -15, -15};
     ctrl::Vector3D          x_d_old = {0,0,0};
@@ -98,6 +99,8 @@ class CartesianAdaptiveComplianceController
     double energy_var_stiff, energy_var_damping;
     rclcpp::Time old_time,current_time,start_time;
     double old_z;
+    std::queue<double> m_surf_vel;
+    double m_surf_vel_sum;
 
     QProblem min_problem;
     int print_index = 0;

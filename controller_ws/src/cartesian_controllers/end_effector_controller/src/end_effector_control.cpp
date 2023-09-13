@@ -99,7 +99,7 @@ namespace end_effector_controller
     m_current_pose = getEndEffectorPose();
     prev_pos = m_current_pose.pose.position.z;
     m_starting_position = m_current_pose.pose.position;
-    m_starting_position.x = 0.035;
+    m_starting_position.x = 0.036;
     m_starting_position.y = -0.36;
     m_grid_position = m_starting_position;
 
@@ -233,7 +233,7 @@ namespace end_effector_controller
   void EndEffectorControl::surfaceApproach()
   {
     // If the detected force in the z direction is greater than 0.1 N the phase is finished
-    if (m_current_pose.pose.position.z < 0.09)
+    if (m_grid_position.z < 0.085 && m_current_pose.pose.position.z < 0.0982)
     {
       m_phase = 3;
       m_surface = m_current_pose.pose.position.z;
@@ -327,8 +327,8 @@ namespace end_effector_controller
 
   void EndEffectorControl::startingHigh()
   {
-    m_target_pose.pose.position.x = m_grid_position.x;
-    m_target_pose.pose.position.y = m_grid_position.y;
+    // m_target_pose.pose.position.x = m_starting_position.x;
+    // m_target_pose.pose.position.y = m_starting_position.y;
     m_target_pose.pose.position.z = m_starting_position.z;
 
     m_target_pose.pose.orientation.x = 1;
@@ -341,12 +341,12 @@ namespace end_effector_controller
     m_pose_publisher->publish(m_target_pose);
 
     // If the end effector is the starting high the phase is finished
-    if (abs(m_current_pose.pose.position.z - m_starting_position.z) < 0.005)
-    {
-      m_phase = 4;
-      newStartingPosition();
-      m_grid_position.z = m_starting_position.z;
-    }
+    // if (abs(m_current_pose.pose.position.z - m_starting_position.z) < 0.005)
+    // {
+    //   m_phase = 4;
+    //   newStartingPosition();
+    //   m_grid_position.z = m_starting_position.z;
+    // }
   }
 
   void EndEffectorControl::newStartingPosition(){

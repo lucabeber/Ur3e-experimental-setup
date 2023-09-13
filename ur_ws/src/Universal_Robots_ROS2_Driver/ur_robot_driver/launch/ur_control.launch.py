@@ -251,7 +251,7 @@ def launch_setup(context, *args, **kwargs):
     cartesian_adaptive_compliance_controller_spawner = Node(
         package="controller_manager",
         executable=spawner,
-        arguments=["cartesian_adaptive_compliance_controller", "--inactive","-c", "/controller_manager"],
+        arguments=["cartesian_adaptive_compliance_controller","-c", "/controller_manager"],
     )
     # cartesian_force_controller_spawner = Node(
     #     package="controller_manager",
@@ -398,6 +398,7 @@ def launch_setup(context, *args, **kwargs):
         condition=UnlessCondition(activate_joint_controller),
     )
 
+    # os.system(" ros2 service call /bus0/ft_sensor0/reset_wrench rokubimini_msgs/srv/ResetWrench \"desired_wrench:  force: x: 0.0 y: 0.0 z: 0.0 torque: x: 0.0 y: 0.0 z: 0.0\" ")
     nodes_to_start = [
         control_node,
         ur_control_node,
@@ -411,7 +412,7 @@ def launch_setup(context, *args, **kwargs):
         # initial_joint_controller_spawner_started,
         motion_control_handle_spawner,
         cartesian_compliance_controller_spawner,
-        cartesian_adaptive_compliance_controller_spawner,
+        #cartesian_adaptive_compliance_controller_spawner,
         # cartesian_force_controller_spawner,
         end_effector_controller_spawner,
         cartesian_motion_controller_spawner,

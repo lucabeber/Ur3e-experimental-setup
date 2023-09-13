@@ -55,7 +55,6 @@
 #include <kdl/chain.hpp>
 #include <kdl/chainfksolvervel_recursive.hpp>
 #include <memory>
-#include <rclcpp/rclcpp.hpp>
 #include <queue>
 
 #define _USE_MATH_DEFINES
