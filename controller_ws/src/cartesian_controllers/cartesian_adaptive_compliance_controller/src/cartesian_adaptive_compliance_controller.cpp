@@ -320,10 +320,10 @@ namespace cartesian_adaptive_compliance_controller
       // dl = {dl_, dl_, dl_};
       // F_ref(2) = -( stiffness_value * pow((z_value + 0.0025 - x(2)),1.35) - damping_value * pow((z_value + 0.0025 - x(2)),1.35) * (m_x_dot(2)-surf_vel) );
       // F_min(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
-      F_ref(2) = -7;
-      F_min(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
-      // F_ref(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
-      // F_min(2) = -15;
+      // F_ref(2) = -9; 
+      // F_min(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
+      F_ref(2) = -( stiffness_value * pow(max_pen,1.35) - damping_value * pow(max_pen,1.35) * (m_x_dot(2)-surf_vel) );
+      F_min(2) = -9;
     }
     else
     {

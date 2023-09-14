@@ -272,8 +272,8 @@ cartesian_adaptive_compliance_controller:
         #- velocity
 
     stiffness:  # w.r.t. compliance_ref_link coordinates
-        trans_x: 500.0
-        trans_y: 500.0
+        trans_x: 300.0
+        trans_y: 300.0
         trans_z: 500.0
         rot_x: 20.0
         rot_y: 20.0
@@ -287,7 +287,7 @@ cartesian_adaptive_compliance_controller:
     pd_gains:
         trans_x: {p: 0.05, d: 0.005}
         trans_y: {p: 0.05, d: 0.005}
-        trans_z: {p: 0.05, d: 0.005}
+        trans_z: {p: 0.3, d: 0.01}
         rot_x: {p: 1.5}
         rot_y: {p: 1.5}
         rot_z: {p: 1.5}
